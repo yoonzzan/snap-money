@@ -1,0 +1,7 @@
+{
+  "name": "Snap Money - THB to KRW Converter",
+  "description": "An elegant web application to convert Thai Baht (THB) to South Korean Won (KRW). It supports both manual input and currency detection from photos taken or uploaded by the user, using the Gemini API for smart value extraction.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
