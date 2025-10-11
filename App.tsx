@@ -17,7 +17,15 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<Mode>('manual');
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      const stored = localStorage.getItem('theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+      return 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
   
   // Manual mode state
   const [manualInput, setManualInput] = useState<string>('');
@@ -35,17 +43,36 @@ const App: React.FC = () => {
   const [exchangeRate, setExchangeRate] = useState<number>(DEFAULT_EXCHANGE_RATE);
 
   useEffect(() => {
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    setTheme(prefersDark ? 'dark' : 'light');
+    const root = window.document.documentElement;
+    const isDark = theme === 'dark';
+    
+    root.classList.remove(isDark ? 'light' : 'dark');
+    root.classList.add(theme);
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e: MediaQueryListEvent) => {
-      setTheme(e.matches ? 'dark' : 'light');
-    };
+    // Save theme to localStorage
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
+  // 환율 변경 시 수동 입력 결과 재계산
+  useEffect(() => {
+    if (manualInput) {
+      const amount = parseFloat(manualInput);
+      if (!isNaN(amount) && amount >= 0) {
+        setManualResult((amount * exchangeRate).toLocaleString('ko-KR', { maximumFractionDigits: 2 }));
+      }
+    }
+  }, [exchangeRate, manualInput]);
+
+  // 환율 변경 시 사진 변환 결과 재계산
+  useEffect(() => {
+    if (photoResults.length > 0) {
+      const updatedResults = photoResults.map(result => ({
+        original: result.original,
+        converted: result.original * exchangeRate,
+      }));
+      setPhotoResults(updatedResults);
+    }
+  }, [exchangeRate]);
 
   const toggleTheme = () => {
     setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
@@ -125,11 +152,12 @@ const App: React.FC = () => {
       console.error(err);
       let errorMessage = '금액 감지 중 오류가 발생했습니다.';
       if (err instanceof Error) {
-        // Check for specific API key error
-        if (err.message.includes('API Key')) {
-            errorMessage = 'API 키가 설정되지 않았거나 유효하지 않습니다. Vercel 환경 변수를 확인해주세요.';
+        // API 키 관련 에러를 대소문자 구분 없이 감지
+        const message = err.message || '';
+        if (/api\s*key/i.test(message)) {
+          errorMessage = 'API 키가 없거나 유효하지 않습니다. .env.local에 VITE_GEMINI_API_KEY를 올바르게 설정한 후 개발 서버를 재시작해주세요.';
         } else {
-            errorMessage += `: ${err.message}`;
+          errorMessage += `: ${message}`;
         }
       }
       setError(errorMessage);
@@ -139,14 +167,14 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`${theme === 'light' ? 'bg-slate-50 text-gray-800' : 'bg-slate-900 text-white'} min-h-screen flex flex-col items-center justify-center p-4 font-sans transition-colors duration-300`}>
-      <div className="w-full max-w-md mx-auto">
-        <header className="relative text-center mb-8">
-          <h1 className={`text-5xl font-bold ${theme === 'light' ? 'text-indigo-600' : 'text-cyan-400'}`}>Snap Money</h1>
-          <p className={`${theme === 'light' ? 'text-slate-500' : 'text-slate-400'} mt-2`}>태국 바트(THB) 🇹🇭 → 대한민국 원(KRW) 🇰🇷</p>
+    <div className="bg-slate-50 dark:bg-slate-900 bg-radial-soft min-h-screen text-gray-800 dark:text-white flex flex-col items-center p-4 sm:p-6 lg:p-8 font-sans transition-colors duration-300">
+      <div className="mx-auto w-full max-w-md md:max-w-lg">
+        <header className="relative text-center mb-6 md:mb-8 animate-fade-in">
+          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight text-slate-900 dark:text-white drop-shadow-md">Snap Money</h1>
+          <p className="text-base text-slate-500 dark:text-slate-400 mt-2">태국 바트(THB) 🇹🇭 → 대한민국 원(KRW) 🇰🇷</p>
           <button 
             onClick={toggleTheme} 
-            className={`absolute top-0 right-0 p-2 rounded-full transition-colors duration-300 ${theme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 text-white'}`}
+            className="absolute -top-1 -right-1 sm:top-0 sm:right-0 p-2 rounded-full transition-colors duration-300 bg-white/70 dark:bg-slate-800/60 backdrop-blur border border-white/40 dark:border-white/10 hover:bg-white/90 dark:hover:bg-slate-700"
             aria-label="Toggle theme"
           >
             {theme === 'light' ? (
@@ -157,25 +185,17 @@ const App: React.FC = () => {
           </button>
         </header>
 
-        <main className={`${theme === 'light' ? 'bg-white' : 'bg-slate-800'} rounded-xl p-6 shadow-lg`}>
-          <div className={`flex border-b ${theme === 'light' ? 'border-gray-200' : 'border-slate-700'} mb-6`}>
+        <main className="glass rounded-3xl p-6">
+          <div className="flex border-b border-gray-200/60 dark:border-slate-700/60 mb-6">
             <button
-              onClick={() => setMode('manual')}
-              className={`flex-1 py-3 text-center font-semibold rounded-t-lg transition-colors duration-300 ${
-                mode === 'manual' 
-                  ? (theme === 'light' ? 'bg-indigo-500 text-white' : 'bg-cyan-500 text-slate-900') 
-                  : (theme === 'light' ? 'bg-transparent text-gray-500 hover:bg-indigo-50 hover:text-indigo-600' : 'bg-transparent text-slate-400 hover:bg-slate-700')
-              }`}
+              onClick={() => setMode('manual')}              
+              className={`tab ${mode === 'manual' ? 'bg-brand-500 text-white' : 'bg-white/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-brand-50'}`}
             >
               바트 금액 직접 입력
             </button>
             <button
               onClick={() => setMode('photo')}
-              className={`flex-1 py-3 text-center font-semibold rounded-t-lg transition-colors duration-300 ${
-                mode === 'photo' 
-                  ? (theme === 'light' ? 'bg-indigo-500 text-white' : 'bg-cyan-500 text-slate-900') 
-                  : (theme === 'light' ? 'bg-transparent text-gray-500 hover:bg-indigo-50 hover:text-indigo-600' : 'bg-transparent text-slate-400 hover:bg-slate-700')
-              }`}
+              className={`tab ${mode === 'photo' ? 'bg-brand-500 text-white' : 'bg-white/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-brand-50'}`}
             >
               사진으로 금액 변환
             </button>
@@ -183,7 +203,7 @@ const App: React.FC = () => {
 
           {mode === 'manual' && (
             <div id="manual-converter" className="animate-fade-in">
-              <label htmlFor="thb-input" className={`block text-sm font-medium ${theme === 'light' ? 'text-gray-700' : 'text-slate-300'} mb-2`}>
+              <label htmlFor="thb-input" className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                 바트(THB) 금액
               </label>
               <input
@@ -192,16 +212,12 @@ const App: React.FC = () => {
                 value={manualInput}
                 onChange={handleManualInputChange}
                 placeholder="예: 1200"
-                className={`w-full p-3 rounded-lg transition-shadow ${
-                  theme === 'light' 
-                    ? 'bg-slate-100 border border-slate-300 text-gray-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-none' 
-                    : 'bg-slate-700 border border-slate-600 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:outline-none'
-                }`}
+                className="w-full p-3 rounded-xl transition-shadow bg-slate-100 border border-slate-300 text-gray-800 placeholder-slate-400 focus:ring-2 focus:ring-brand-500 focus:outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white dark:placeholder-slate-500 dark:focus:ring-brand-500 text-lg"
               />
               {manualResult && (
-                <div className={`mt-6 text-center p-4 rounded-xl ${theme === 'light' ? 'bg-indigo-50' : 'bg-slate-700'}`}>
-                  <p className={`${theme === 'light' ? 'text-indigo-800' : 'text-slate-400'}`}>변환된 원화(KRW) 금액</p>
-                  <p className={`text-3xl font-bold mt-1 ${theme === 'light' ? 'text-indigo-600' : 'text-cyan-400'}`}>
+                <div className="mt-6 text-center p-4 rounded-2xl bg-brand-50 dark:bg-slate-700/60">
+                  <p className="text-sm text-brand-800 dark:text-slate-300">변환된 원화(KRW) 금액</p>
+                  <p className="text-3xl font-bold mt-1 text-brand-600 dark:text-rose-400">
                     ₩ {manualResult}
                   </p>
                 </div>
@@ -211,16 +227,11 @@ const App: React.FC = () => {
 
           {mode === 'photo' && (
             <div id="photo-converter" className="animate-fade-in">
-              <p className={`text-sm font-medium ${theme === 'light' ? 'text-gray-700' : 'text-slate-300'} mb-3 text-center`}>영수증 또는 가격표 사진</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-3 text-center">영수증 또는 가격표 사진</p>
               
               <div className="flex space-x-2">
                   <button 
-                    onClick={triggerFileSelect} 
-                    className={`flex-1 font-semibold py-3 px-4 rounded-lg transition-colors duration-300 ${
-                      theme === 'light' 
-                        ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' 
-                        : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                    }`}
+                    onClick={triggerFileSelect}                     className="flex-1 btn-primary"
                   >
                     파일 선택
                   </button>
@@ -229,7 +240,7 @@ const App: React.FC = () => {
 
               {imagePreview && (
                 <div className="mt-4 relative group">
-                  <img src={imagePreview} alt="선택한 이미지" className={`rounded-xl max-h-60 w-auto mx-auto ${theme === 'light' ? 'shadow-md' : ''}`} />
+                  <img src={imagePreview} alt="선택한 이미지" className="rounded-2xl max-h-60 w-auto mx-auto shadow-soft" />
                   <button onClick={() => {setImagePreview(null); setImageFile(null); setPhotoResults([]);}} className="absolute top-2 right-2 bg-black bg-opacity-60 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-xl opacity-50 group-hover:opacity-100 transition-opacity">&times;</button>
                 </div>
               )}
@@ -238,26 +249,22 @@ const App: React.FC = () => {
                 <button
                   onClick={handleDetectAndConvert}
                   disabled={isLoading}
-                  className={`w-full mt-4 text-white font-bold py-3 px-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed ${
-                    theme === 'light' 
-                      ? 'bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600' 
-                      : 'bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-700 hover:to-cyan-700'
-                  }`}
+                  className="w-full mt-4 btn-primary font-bold transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? '금액 감지 중...' : '사진에서 금액 변환'}
                 </button>
               )}
 
-              {error && <p className={`mt-4 text-center p-3 rounded-lg ${theme === 'light' ? 'text-red-600 bg-red-100' : 'text-red-400 bg-red-900 bg-opacity-30'}`}>{error}</p>}
+              {error && <p className="mt-4 text-center p-3 rounded-xl text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/40">{error}</p>}
               
               {photoResults.length > 0 && (
                 <div className="mt-4">
                   <h3 className="text-lg font-semibold text-center mb-3">변환 결과</h3>
                   <ul className="space-y-2">
                     {photoResults.map((result: { original: number; converted: number }, index: number) => (
-                      <li key={index} className={`flex justify-between items-center p-3 rounded-lg ${theme === 'light' ? 'bg-slate-100' : 'bg-slate-700'}`}>
-                        <span className={`${theme === 'light' ? 'text-gray-600' : 'text-slate-400'}`}>{result.original.toLocaleString('en-US')} THB</span>
-                        <span className={`${theme === 'light' ? 'text-indigo-600' : 'text-cyan-400'} font-semibold`}>
+                      <li key={index} className="flex justify-between items-center p-3 rounded-2xl bg-slate-100 dark:bg-slate-700/70">
+                        <span className="text-gray-600 dark:text-slate-400">{result.original.toLocaleString('en-US')} THB</span>
+                        <span className="text-brand-600 dark:text-rose-400 font-semibold">
                           ₩ {result.converted.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}
                         </span>
                       </li>
@@ -269,23 +276,19 @@ const App: React.FC = () => {
           )}
         </main>
 
-        <footer className={`text-center mt-8 text-sm ${theme === 'light' ? 'text-slate-600' : 'text-slate-500'}`}>
-            <div className={`${theme === 'light' ? 'bg-white shadow-md' : 'bg-slate-800'} p-4 rounded-xl flex items-center justify-center space-x-2`}>
+        <footer className="text-center mt-8 text-sm text-slate-600 dark:text-slate-500">
+            <div className="glass p-4 rounded-2xl flex items-center justify-center space-x-2">
                 <span>적용 환율: 1 THB = </span>
                 <input 
                     type="number"
                     value={exchangeRate}
                     onChange={(e: ChangeEvent<HTMLInputElement>) => setExchangeRate(parseFloat(e.target.value) || 0)}
-                    className={`w-24 font-semibold text-center rounded-md p-1 focus:outline-none focus:ring-2 ${
-                      theme === 'light' 
-                        ? 'bg-slate-100 text-indigo-600 focus:ring-indigo-500' 
-                        : 'bg-slate-700 text-cyan-400 focus:ring-cyan-500'
-                    }`}
+                    className="w-24 font-semibold text-center rounded-md p-1 focus:outline-none focus:ring-2 bg-slate-100 text-brand-600 focus:ring-brand-500 dark:bg-slate-700 dark:text-rose-400 dark:focus:ring-brand-500"
                     step="0.1"
                 />
                 <span> KRW</span>
             </div>
-            <p className="mt-4">이 서비스는 개발 단계의ㅅㅅㅅㅅㅅㅅ 가상 환율을 사용합니다.</p>
+            <p className="mt-4 text-xs sm:text-sm">이 서비스는 개발 단계의 가상 환율을 사용합니다.</p>
         </footer>
       </div>
     </div>

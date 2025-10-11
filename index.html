@@ -13,6 +13,15 @@
       }
     </style>
     <link rel="stylesheet" href="/index.css">
+    <script>
+      try {
+        var stored = localStorage.getItem('theme');
+        var enableDark = stored ? stored === 'dark' : true;
+        if (enableDark) document.documentElement.classList.add('dark');
+      } catch (_) {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
 </head>
   <body>
     <div id="root"></div>
